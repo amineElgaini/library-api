@@ -8,15 +8,34 @@ use Illuminate\Support\Str;
 
 class BookController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        return Book::with('category')->get();
+        $query = Book::with('category');
+
+        if ($request->has('category_id')) {
+            $query->where('category_id', $request->category_id);
+        }
+
+        if ($request->has('sort')) {
+            switch ($request->sort) {
+                case 'popular':
+                    $query->orderBy('views', 'desc');
+                    break;
+                case 'new':
+                    $query->where('views', 0)->orderBy('created_at', 'desc');
+                    break;
+            }
+        }
+
+        $books = $query->paginate(10);
+
+        return response()->json($books);
     }
 
     public function show($slug)
     {
         $book = Book::where('slug', $slug)->with('category')->firstOrFail();
-        $book->increment('views'); // increment views
+        $book->increment('views');
         return $book;
     }
 
@@ -31,7 +50,14 @@ class BookController extends Controller
             'damaged_copies' => 'nullable|integer|min:0',
         ]);
 
-        $data['slug'] = Str::slug($data['title']);
+        $title = $data['title'];
+        $slug = Str::slug($title);
+        $count = Book::where('slug', 'LIKE', "{$slug}%")->count();
+        if ($count > 0) {
+            $slug .= '-' . ($count + 1);
+        }
+        $data['slug'] = $slug;
+
         $book = Book::create($data);
 
         return response()->json($book, 201);
@@ -51,7 +77,13 @@ class BookController extends Controller
         ]);
 
         if (isset($data['title'])) {
-            $data['slug'] = Str::slug($data['title']);
+            $title = $data['title'];
+            $slug = Str::slug($title);
+            $count = Book::where('slug', 'LIKE', "{$slug}%")->count();
+            if ($count > 0) {
+                $slug .= '-' . ($count + 1);
+            }
+            $data['slug'] = $slug;
         }
 
         $book->update($data);
@@ -65,15 +97,5 @@ class BookController extends Controller
         $book->delete();
 
         return response()->json(['message' => 'Book deleted']);
-    }
-
-    public function popular()
-    {
-        return Book::with('category')->orderBy('views', 'desc')->take(10)->get();
-    }
-
-    public function newArrivals()
-    {
-        return Book::with('category')->orderBy('created_at', 'desc')->take(10)->get();
     }
 }
